@@ -12,6 +12,7 @@ const Room = () => {
   const [isReady, setIsReady] = useState(false);
   const [countdown, setCountdown] = useState(null);
   const [matchStatus, setMatchStatus] = useState("waiting"); // waiting, ready, starting, started
+  const [matchData, setMatchData] = useState(null); // { roomId, batter, bowler, message }
   const socketRef = useRef(null);
 
   useEffect(() => {
@@ -40,6 +41,7 @@ const Room = () => {
 
     socketRef.current.on('startMatch', (data) => {
       console.log('Match Starting signal received from server:', data);
+      setMatchData(data);
       setMatchStatus("ready");
       // Short delay before starting countdown
       setTimeout(() => {
@@ -66,7 +68,12 @@ const Room = () => {
       // Small delay for the "Match Started" UI to be visible
       const timer = setTimeout(() => {
         navigate('/game', { 
-          state: { roomId, playerName } 
+          state: { 
+            roomId, 
+            playerName,
+            batter: matchData?.batter,
+            bowler: matchData?.bowler
+          } 
         });
       }, 1500);
       return () => clearTimeout(timer);

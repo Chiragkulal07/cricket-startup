@@ -1,5 +1,6 @@
 import React, { useRef, useEffect, useState } from 'react';
 import { useLocation } from 'react-router-dom';
+import { io } from 'socket.io-client';
 
 /**
  * CricketGame Component
@@ -12,6 +13,22 @@ const CricketGame = () => {
     const [playerName, setPlayerName] = useState(location.state?.playerName || 'Player');
     const [roomId, setRoomId] = useState(location.state?.roomId || '');
     const [mode, setMode] = useState(location.state?.roomId ? 'multiplayer' : 'ai');
+    const [currentBatter, setCurrentBatter] = useState(location.state?.batter || '');
+    const [currentBowler, setCurrentBowler] = useState(location.state?.bowler || '');
+
+    const isBatter = mode === 'multiplayer' ? (playerName === currentBatter) : true;
+    const isBowler = mode === 'multiplayer' ? (playerName === currentBowler) : true;
+
+    useEffect(() => {
+        if (mode === 'multiplayer') {
+            console.log("Multiplayer Match Info:", { 
+                playerName, 
+                currentBatter, 
+                currentBowler, 
+                role: isBatter ? 'batter' : (isBowler ? 'bowler' : 'spectator') 
+            });
+        }
+    }, [mode, playerName, currentBatter, currentBowler, isBatter, isBowler]);
 
     const canvasRef = useRef(null);
     const [shotDirection, setShotDirection] = useState('STRAIGHT');
@@ -20,6 +37,7 @@ const CricketGame = () => {
     const [popupText, setPopupText] = useState('');
     const [isBallActive, setIsBallActive] = useState(false);
     const isBallActiveRef = useRef(false);
+    const socketRef = useRef(null);
     
     // Image Refs
     const images = useRef({
@@ -263,126 +281,37 @@ const CricketGame = () => {
                     const diffY = Math.abs(ball.y - batsmanY);
 
                     if (diffX < 30 && diffY < 40) {
-                        // Precise timing: how close was the ball to batsmanY when HIT was pressed?
                         const timingDiff = Math.abs(ball.y - batsmanY);
-
-                        if (timingDiff < 10) {
-                            console.log("SIX");
-                            ball.isHit = true;
-                            ball.velocityY = -15;
-                            score.current += 6;
-                            lastResult.current = "SIX!";
-                            canvasPopupText.current = "SIX!";
-                            showCanvasPopup.current = true;
-                            setTimeout(() => { showCanvasPopup.current = false; }, 800);
-                            setPopupText("SIX!! 🏏");
-                            setShowPopup(true);
-                            zoom.current = 1.2;
-                            setTimeout(() => { 
-                                zoom.current = 1; 
-                                setShowPopup(false);
-                            }, 1500);
-                            console.log("Score:", score.current);
-                            if (shotDirection === 'LEFT') ball.velocityX = -5;
-                            else if (shotDirection === 'RIGHT') ball.velocityX = 5;
-                            else ball.velocityX = 0;
-
-                        } else if (timingDiff < 25) {
-                            console.log("FOUR");
-                            ball.isHit = true;
-                            ball.velocityY = -8;
-                            score.current += 4;
-                            lastResult.current = "FOUR!";
-                            canvasPopupText.current = "FOUR!";
-                            showCanvasPopup.current = true;
-                            setTimeout(() => { showCanvasPopup.current = false; }, 800);
-                            setPopupText("FOUR! 🏏");
-                            setShowPopup(true);
-                            console.log("Score:", score.current);
-                            setTimeout(() => setShowPopup(false), 1500);
-                            if (shotDirection === 'LEFT') ball.velocityX = -2.5;
-                            else if (shotDirection === 'RIGHT') ball.velocityX = 2.5;
-                            else ball.velocityX = 0;
-
+                        const timingStr = timingDiff < 10 ? "perfect" : (timingDiff < 25 ? "good" : "late");
+                        
+                        if (mode === 'multiplayer') {
+                            if (isBatter) {
+                                console.log("Emitting hitBall:", { roomId, timing: timingStr });
+                                socketRef.current.emit('hitBall', { roomId, timing: timingStr });
+                            }
                         } else {
-                            console.log("DOT");
-                            lastResult.current = "DOT";
-                            console.log("Score:", score.current);
-                            ball.y = 0;
-                            ball.x = canvas.width / 2 + (Math.random() * 100 - 50);
-                            ball.velocityY = 3;
-                            ball.velocityX = 0;
-                            ball.hasBounced = false;
-                            hasEvaluated.current = false;
-                            isBallActiveRef.current = false;
-                            setIsBallActive(false);
+                            // Local AI Mode evaluation (Existing logic refactored)
+                            const localResult = timingStr === "perfect" ? 6 : (timingStr === "good" ? 4 : 0);
+                            handleBallResult(localResult, timingStr);
                         }
                     } else {
-                        // Out of reach/accuracy check failed
-                        console.log("OUT OF REACH - MISS");
-                        lastResult.current = "MISS";
-                        canvasPopupText.current = "MISS";
-                        showCanvasPopup.current = true;
-                        setTimeout(() => { showCanvasPopup.current = false; }, 800);
-                        ball.y = 0;
-                        ball.x = canvas.width / 2 + (Math.random() * 100 - 50);
-                        ball.velocityY = 3;
-                        ball.velocityX = 0;
-                        ball.hasBounced = false;
-                        hasEvaluated.current = false;
-                        isBallActiveRef.current = false;
-                        setIsBallActive(false);
-                    }
-                } else {
-                    // Player didn't attempt — check if it hits the wicket
-                    const wicketCenter = wicketX;
-                    const lineDiff = Math.abs(ball.x - wicketCenter);
-                    const isStraight = lineDiff < 15;
-
-                    if (isStraight) {
-                        console.log("BOWLED!");
-                        lastResult.current = "OUT";
-                        canvasPopupText.current = "BOWLED!";
-                        showCanvasPopup.current = true;
-                        setTimeout(() => { showCanvasPopup.current = false; }, 800);
-                        wickets.current++;
-                        isOut.current = true;
-                        setShowPopup(true);
-                        setPopupText("BOWLED!");
-                        outSound.currentTime = 0;
-                        outSound.play().catch(() => {});
-                        
-                        setTimeout(() => {
-                            ball.y = 0;
-                            ball.x = canvas.width / 2 + (Math.random() * 100 - 50);
-                            ball.velocityY = 3;
-                            ball.velocityX = 0;
-                            ball.isHit = false;
-                            ball.hasBounced = false;
-                            isOut.current = false;
-                            hasEvaluated.current = false;
-                            lastResult.current = "";
-                            isBallActiveRef.current = false;
-                            setIsBallActive(false);
-                            setShowPopup(false);
-                        }, 2000);
-                    } else {
                         console.log("MISS");
+                        if (mode !== 'multiplayer') {
+                            lastResult.current = "MISS";
+                            resetBall();
+                        }
+                    }
+                } else if (mode !== 'multiplayer') {
+                    // AI Mode non-swing logic
+                    const wicketCenter = wicketX;
+                    const isStraight = Math.abs(ball.x - wicketCenter) < 15;
+                    if (isStraight) {
+                        handleBallResult("OUT", "late");
+                    } else {
                         lastResult.current = "MISS";
-                        canvasPopupText.current = "MISS";
-                        showCanvasPopup.current = true;
-                        setTimeout(() => { showCanvasPopup.current = false; }, 800);
-                        ball.y = 0;
-                        ball.x = canvas.width / 2 + (Math.random() * 100 - 50);
-                        ball.velocityY = 3;
-                        ball.velocityX = 0;
-                        ball.hasBounced = false;
-                        hasEvaluated.current = false;
-                        isBallActiveRef.current = false;
-                        setIsBallActive(false);
+                        resetBall();
                     }
                 }
-                // Always consume the intent flag
                 playerTriedToHit.current = false;
             }
 
@@ -495,6 +424,113 @@ const CricketGame = () => {
         };
     }, []);
 
+    // Socket Connection & Ball Listener
+    useEffect(() => {
+        if (mode === 'multiplayer' && roomId) {
+            socketRef.current = io('http://localhost:3000');
+            
+            socketRef.current.on('connect', () => {
+                console.log("Game Socket connected:", socketRef.current.id);
+                socketRef.current.emit('joinRoom', { roomId, playerName });
+            });
+
+            socketRef.current.on('ballBowled', (data) => {
+                console.log("Received ballBowled:", data);
+                setShotDirection(data.direction);
+                startBallAnimation(data.direction);
+            });
+
+            socketRef.current.on('ballResult', (data) => {
+                console.log("Received ballResult:", data);
+                handleBallResult(data.result, data.timing);
+            });
+
+            return () => {
+                if (socketRef.current) socketRef.current.disconnect();
+            };
+        }
+    }, [mode, roomId, playerName]);
+
+    const handleBallResult = (result, timing) => {
+        const ball = ballState.current;
+        const canvas = canvasRef.current;
+        if (!ball || !canvas) return;
+
+        if (result === "wicket" || result === "OUT") {
+            isOut.current = true;
+            lastResult.current = "OUT";
+            canvasPopupText.current = "OUT!";
+            showCanvasPopup.current = true;
+            setTimeout(() => { showCanvasPopup.current = false; }, 800);
+            setPopupText("OUT!");
+            setShowPopup(true);
+            outSound.currentTime = 0;
+            outSound.play().catch(() => {});
+            
+            setTimeout(() => {
+                resetBall();
+                setShowPopup(false);
+            }, 2000);
+        } else if (result === 6 || result === 4) {
+            ball.isHit = true;
+            ball.velocityY = result === 6 ? -15 : -8;
+            score.current += result;
+            lastResult.current = result === 6 ? "SIX!" : "FOUR!";
+            canvasPopupText.current = lastResult.current;
+            showCanvasPopup.current = true;
+            setTimeout(() => { showCanvasPopup.current = false; }, 800);
+            setPopupText(result === 6 ? "SIX!! 🏏" : "FOUR! 🏏");
+            setShowPopup(true);
+            
+            if (result === 6) zoom.current = 1.2;
+            
+            setTimeout(() => { 
+                zoom.current = 1; 
+                setShowPopup(false);
+            }, 1500);
+
+            // Directional velocity
+            if (shotDirection === 'LEFT') ball.velocityX = result === 6 ? -5 : -2.5;
+            else if (shotDirection === 'RIGHT') ball.velocityX = result === 6 ? 5 : 2.5;
+            else ball.velocityX = 0;
+
+        } else {
+            // Dot or Small Run (0, 1, 2)
+            if (result > 0) {
+                ball.isHit = true;
+                ball.velocityY = -5;
+                score.current += result;
+                lastResult.current = `${result} RUN${result > 1 ? 'S' : ''}`;
+                canvasPopupText.current = lastResult.current;
+                showCanvasPopup.current = true;
+                setTimeout(() => { showCanvasPopup.current = false; }, 800);
+                setPopupText(`${result} RUN!`);
+                setShowPopup(true);
+                setTimeout(() => setShowPopup(false), 1000);
+            } else {
+                lastResult.current = "DOT";
+                setTimeout(() => resetBall(), 500);
+            }
+        }
+    };
+
+    const resetBall = () => {
+        const ball = ballState.current;
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+
+        ball.y = 0;
+        ball.x = canvas.width / 2 + (Math.random() * 100 - 50);
+        ball.velocityY = 3;
+        ball.velocityX = 0;
+        ball.isHit = false;
+        ball.hasBounced = false;
+        isOut.current = false;
+        hasEvaluated.current = false;
+        isBallActiveRef.current = false;
+        setIsBallActive(false);
+    };
+
     const handleHit = () => {
         if (!isBallActiveRef.current) return;
         // Only register player's intent — timing is evaluated in the render loop
@@ -515,6 +551,17 @@ const CricketGame = () => {
     };
 
     const startBall = () => {
+        if (mode === 'multiplayer') {
+            if (isBowler) {
+                console.log("Emitting bowlBall:", { roomId, direction: shotDirection });
+                socketRef.current.emit('bowlBall', { roomId, direction: shotDirection });
+            }
+        } else {
+            startBallAnimation(shotDirection);
+        }
+    };
+
+    const startBallAnimation = (dir) => {
         setIsBallActive(true); // Hide READY button immediately
         
         setTimeout(() => {
@@ -522,9 +569,16 @@ const CricketGame = () => {
             // Reset ball to bowler's end
             const ball = ballState.current;
             const canvas = canvasRef.current;
-            const bowlerY = canvas.height * 0.20;
+            if (!canvas) return;
+
             ball.y = 0;
-            ball.x = canvas.width / 2 + (Math.random() * 100 - 50);
+            
+            // Synchronize starting X based on direction
+            const center = canvas.width / 2;
+            if (dir === 'LEFT') ball.x = center - 40;
+            else if (dir === 'RIGHT') ball.x = center + 40;
+            else ball.x = center;
+
             ball.velocityY = 3;
             ball.velocityX = 0;
             ball.isHit = false;
@@ -556,33 +610,62 @@ const CricketGame = () => {
                     left: '50%',
                     transform: 'translateX(-50%)',
                     zIndex: 10,
-                    background: 'rgba(0, 0, 0, 0.4)',
-                    backdropFilter: 'blur(10px)',
+                    background: 'rgba(0, 0, 0, 0.6)',
+                    backdropFilter: 'blur(15px)',
                     border: '1px solid rgba(255, 255, 255, 0.2)',
-                    padding: '10px 30px',
-                    borderRadius: '50px',
+                    padding: '12px 30px',
+                    borderRadius: '20px',
                     display: 'flex',
+                    flexDirection: 'column',
                     alignItems: 'center',
-                    gap: '20px',
+                    gap: '10px',
                     boxShadow: '0 10px 30px rgba(0,0,0,0.5)',
                     color: 'white',
-                    minWidth: '350px',
-                    justifyContent: 'space-between'
+                    minWidth: '400px'
                 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                        <span style={{ 
-                            background: '#FFD700', 
-                            color: 'black', 
-                            padding: '4px 10px', 
-                            borderRadius: '20px', 
-                            fontSize: '0.75rem',
-                            fontWeight: 'bold',
+                    <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', alignItems: 'center' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                             <span style={{ 
+                                background: '#FFD700', 
+                                color: 'black', 
+                                padding: '2px 8px', 
+                                borderRadius: '4px', 
+                                fontSize: '0.65rem',
+                                fontWeight: '900',
+                             }}>LIVE</span>
+                             <span style={{ opacity: 0.7, fontSize: '0.9rem' }}>Room: {roomId}</span>
+                        </div>
+                        
+                        <div style={{
+                            background: isBatter ? '#4CAF50' : (isBowler ? '#2196F3' : '#888'),
+                            color: 'white',
+                            padding: '4px 12px',
+                            borderRadius: '30px',
+                            fontSize: '0.8rem',
+                            fontWeight: '700',
                             textTransform: 'uppercase'
-                        }}>Multiplayer Match</span>
+                        }}>
+                            {isBatter ? "You are Batting" : (isBowler ? "You are Bowling" : "Spectating")}
+                        </div>
                     </div>
-                    <div style={{ display: 'flex', gap: '15px', fontWeight: '600' }}>
-                        <span style={{ opacity: 0.7 }}>Room: <span style={{ color: 'white' }}>{roomId}</span></span>
-                        <span>{playerName}</span>
+
+                    <div style={{ 
+                        display: 'flex', 
+                        justifyContent: 'center', 
+                        gap: '30px', 
+                        width: '100%', 
+                        fontSize: '0.95rem',
+                        borderTop: '1px solid rgba(255, 255, 255, 0.1)',
+                        paddingTop: '8px'
+                    }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                            <span style={{ fontSize: '0.7rem', opacity: 0.5, textTransform: 'uppercase' }}>Batter</span>
+                            <span style={{ fontWeight: '700', color: isBatter ? '#4CAF50' : 'white' }}>{currentBatter || 'Waiting...'}</span>
+                        </div>
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                            <span style={{ fontSize: '0.7rem', opacity: 0.5, textTransform: 'uppercase' }}>Bowler</span>
+                            <span style={{ fontWeight: '700', color: isBowler ? '#2196F3' : 'white' }}>{currentBowler || 'Waiting...'}</span>
+                        </div>
                     </div>
                 </div>
             )}
@@ -610,80 +693,102 @@ const CricketGame = () => {
                 borderTop: '4px solid #444',
                 flex: 1
             }}>
-                {/* Direction Selection */}
-                <div style={{ display: 'flex', gap: '15px' }}>
-                    {['LEFT', 'STRAIGHT', 'RIGHT'].map((dir) => (
+                {/* Bowling Direction Selection */}
+                {isBowler && (
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px' }}>
+                        <span style={{ fontSize: '0.8rem', color: '#aaa', textTransform: 'uppercase' }}>Select Bowling Line</span>
+                        <div style={{ display: 'flex', gap: '15px' }}>
+                            {['LEFT', 'STRAIGHT', 'RIGHT'].map((dir) => (
+                                <button
+                                    key={dir}
+                                    onClick={() => setShotDirection(dir)}
+                                    style={{
+                                        padding: '10px 20px',
+                                        fontSize: '16px',
+                                        fontWeight: 'bold',
+                                        backgroundColor: shotDirection === dir ? '#2196F3' : '#333',
+                                        color: 'white',
+                                        border: '2px solid' + (shotDirection === dir ? '#FFF' : '#666'),
+                                        borderRadius: '8px',
+                                        cursor: 'pointer',
+                                        transition: 'all 0.2s'
+                                    }}
+                                >
+                                    {dir}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                )}
+                
+                {/* Batting Controls */}
+                {isBatter && (
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '20px' }}>
+                        {/* Hit Action Button (Dedicated) */}
                         <button
-                            key={dir}
-                            onClick={() => setShotDirection(dir)}
+                            onClick={handleHit}
                             style={{
-                                padding: '12px 24px',
-                                fontSize: '18px',
+                                padding: '15px 80px',
+                                fontSize: '24px',
                                 fontWeight: 'bold',
-                                backgroundColor: shotDirection === dir ? '#4CAF50' : '#333',
+                                backgroundColor: '#ff5722',
                                 color: 'white',
-                                border: '2px solid' + (shotDirection === dir ? '#FFF' : '#666'),
-                                borderRadius: '6px',
+                                border: 'none',
+                                borderRadius: '12px',
                                 cursor: 'pointer',
+                                boxShadow: '0 8px 16px rgba(255, 87, 34, 0.3)',
+                                textTransform: 'uppercase',
                                 transition: 'all 0.2s'
                             }}
+                            onMouseDown={(e) => e.currentTarget.style.transform = 'scale(0.95)'}
+                            onMouseUp={(e) => e.currentTarget.style.transform = 'scale(1)'}
                         >
-                            {dir}
+                            HIT
                         </button>
-                    ))}
-                </div>
-                
-                {/* Hit Action Button (Dedicated) */}
-                <button
-                    onClick={handleHit}
-                    style={{
-                        padding: '15px 60px',
-                        fontSize: '22px',
-                        fontWeight: 'bold',
-                        backgroundColor: '#ff5722',
-                        color: 'white',
-                        border: 'none',
-                        borderRadius: '10px',
-                        cursor: 'pointer',
-                        boxShadow: '0 4px 8px rgba(0,0,0,0.4)',
-                        textTransform: 'uppercase'
-                    }}
-                >
-                    HIT
-                </button>
 
-                {/* Movement Controls */}
-                <div style={{ display: 'flex', gap: '10px', marginBottom: '10px' }}>
-                    <button
-                        onClick={() => moveBatsman('LEFT')}
-                        style={{
-                            padding: '10px 20px',
-                            backgroundColor: '#555',
-                            color: 'white',
-                            border: 'none',
-                            borderRadius: '8px',
-                            cursor: 'pointer'
-                        }}
-                    >
-                        ⬅️ MOVE LEFT
-                    </button>
-                    <button
-                        onClick={() => moveBatsman('RIGHT')}
-                        style={{
-                            padding: '10px 20px',
-                            backgroundColor: '#555',
-                            color: 'white',
-                            border: 'none',
-                            borderRadius: '8px',
-                            cursor: 'pointer'
-                        }}
-                    >
-                        MOVE RIGHT ➡️
-                    </button>
-                </div>
+                        {/* Movement Controls */}
+                        <div style={{ display: 'flex', gap: '15px' }}>
+                            <button
+                                onClick={() => moveBatsman('LEFT')}
+                                style={{
+                                    padding: '12px 25px',
+                                    backgroundColor: '#444',
+                                    color: 'white',
+                                    border: '1px solid #666',
+                                    borderRadius: '10px',
+                                    cursor: 'pointer',
+                                    fontWeight: 'bold'
+                                }}
+                            >
+                                ⬅️ LEFT
+                            </button>
+                            <button
+                                onClick={() => moveBatsman('RIGHT')}
+                                style={{
+                                    padding: '12px 25px',
+                                    backgroundColor: '#444',
+                                    color: 'white',
+                                    border: '1px solid #666',
+                                    borderRadius: '10px',
+                                    cursor: 'pointer',
+                                    fontWeight: 'bold'
+                                }}
+                            >
+                                RIGHT ➡️
+                            </button>
+                        </div>
+                    </div>
+                )}
+ pocket
+                {/* Non-role placeholder */}
+                {!isBatter && !isBowler && (
+                    <div style={{ color: '#888', fontStyle: 'italic', padding: '20px' }}>
+                        Waiting for your turn...
+                    </div>
+                )}
 
-                {/* READY Trigger (Only pre-delivery) */}
-                {!isBallActive && (
+                {/* READY Trigger (Only pre-delivery, only for bowler) */}
+                {isBowler && !isBallActive && (
                     <button
                         onClick={startBall}
                         style={{
@@ -695,12 +800,15 @@ const CricketGame = () => {
                             border: 'none',
                             borderRadius: '12px',
                             cursor: 'pointer',
-                            boxShadow: '0 6px 12px rgba(0,0,0,0.5)',
-                            transition: 'transform 0.1s active',
-                            textTransform: 'uppercase'
+                            boxShadow: '0 8px 20px rgba(76, 175, 80, 0.4)',
+                            transition: 'all 0.2s',
+                            textTransform: 'uppercase',
+                            marginTop: '10px'
                         }}
+                        onMouseEnter={(e) => e.currentTarget.style.transform = 'translateY(-2px)'}
+                        onMouseLeave={(e) => e.currentTarget.style.transform = 'translateY(0)'}
                     >
-                        READY
+                        BOWL NOW
                     </button>
                 )}
             </div>
