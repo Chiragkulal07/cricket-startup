@@ -141,7 +141,7 @@ const Dashboard = () => {
 
   const menuItems = [
     { title: 'Play vs AI', icon: FaRobot, action: () => navigate('/ai-battle') },
-    { title: 'Play with Friends', icon: FaUsers, action: () => navigate('/friends') },
+    { title: 'Play with Friends', icon: FaUsers, action: () => navigate('/multiplayer') },
     { title: 'Auction Mode', icon: FaGavel, action: () => navigate('/auction') },
     { title: 'Create League', icon: FaTrophy, action: () => navigate('/league') },
     { title: 'Quick Game', icon: FaPlay, action: () => navigate('/game') },

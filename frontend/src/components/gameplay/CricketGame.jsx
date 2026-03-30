@@ -1,4 +1,5 @@
 import React, { useRef, useEffect, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 
 /**
  * CricketGame Component
@@ -7,6 +8,11 @@ import React, { useRef, useEffect, useState } from 'react';
 const outSound = new Audio("/out.mp3");
 
 const CricketGame = () => {
+    const location = useLocation();
+    const [playerName, setPlayerName] = useState(location.state?.playerName || 'Player');
+    const [roomId, setRoomId] = useState(location.state?.roomId || '');
+    const [mode, setMode] = useState(location.state?.roomId ? 'multiplayer' : 'ai');
+
     const canvasRef = useRef(null);
     const [shotDirection, setShotDirection] = useState('STRAIGHT');
     const [isLoaded, setIsLoaded] = useState(false);
@@ -539,8 +545,48 @@ const CricketGame = () => {
             height: '100vh', 
             overflowY: 'auto', 
             backgroundColor: '#111', 
-            fontFamily: 'Arial, sans-serif' 
+            fontFamily: "'Inter', sans-serif",
+            position: 'relative'
         }}>
+            {/* Multiplayer Header */}
+            {mode === 'multiplayer' && (
+                <div style={{
+                    position: 'absolute',
+                    top: '20px',
+                    left: '50%',
+                    transform: 'translateX(-50%)',
+                    zIndex: 10,
+                    background: 'rgba(0, 0, 0, 0.4)',
+                    backdropFilter: 'blur(10px)',
+                    border: '1px solid rgba(255, 255, 255, 0.2)',
+                    padding: '10px 30px',
+                    borderRadius: '50px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '20px',
+                    boxShadow: '0 10px 30px rgba(0,0,0,0.5)',
+                    color: 'white',
+                    minWidth: '350px',
+                    justifyContent: 'space-between'
+                }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <span style={{ 
+                            background: '#FFD700', 
+                            color: 'black', 
+                            padding: '4px 10px', 
+                            borderRadius: '20px', 
+                            fontSize: '0.75rem',
+                            fontWeight: 'bold',
+                            textTransform: 'uppercase'
+                        }}>Multiplayer Match</span>
+                    </div>
+                    <div style={{ display: 'flex', gap: '15px', fontWeight: '600' }}>
+                        <span style={{ opacity: 0.7 }}>Room: <span style={{ color: 'white' }}>{roomId}</span></span>
+                        <span>{playerName}</span>
+                    </div>
+                </div>
+            )}
+
             {/* Game Viewport */}
             <canvas
                 ref={canvasRef}
